@@ -1,4 +1,5 @@
 import re
+import win32com.client as win32
 
 from tkinter.ttk import Label, OptionMenu
 import tkinter as tk
@@ -12,7 +13,7 @@ from docx.enum.section import WD_ORIENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_PARAGRAPH_ALIGNMENT
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn
-from docx.shared import Pt, Mm, Cm
+from docx.shared import Pt, Mm, Cm, Inches
 from docx.oxml.ns import nsmap
 from docx.enum.text import WD_LINE_SPACING
 
@@ -52,6 +53,21 @@ def convert_doc_to_docx(input_path):
     doc.Close()
     word.Quit()
     return output_path
+
+
+def has_graphics(paragraph):
+    """检查段落是否包含图形（如图片、图表、公式、流程图等）。"""
+    for run in paragraph.runs:
+        # 直接检查XML中的关键元素
+        xml_str = run._element.xml
+        if '<m:oMath' in xml_str or \
+                '<wp:anchor' in xml_str or '<v:shape' in xml_str:
+            # paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            return True
+        if '<pic:pic' in xml_str or '<wp:inline' in xml_str:
+            paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            return True
+    return False
 
 
 # 默认模板
@@ -131,27 +147,6 @@ def apply_default_template():
                 # 设置段落的行距为单倍行距
                 paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
 
-    # def has_graphics(paragraph):
-    #     """检查段落是否包含图形（如图片）。"""
-    #     if paragraph._element.xpath('.//w:drawing | .//wp:inline | .//wp:anchor | .//pic:pic'):
-    #         return True
-    #     return False
-
-    def has_graphics(paragraph):
-        """检查段落是否包含图形（如图片、图表、公式、流程图等）。"""
-        for run in paragraph.runs:
-            # 直接检查XML中的关键元素
-            xml_str = run._element.xml
-            if '<wp:inline' in xml_str or '<wp:anchor' in xml_str or \
-                    '<pic:pic' in xml_str or '<m:oMath' in xml_str or \
-                    '<v:shape' in xml_str:
-                paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-                return True
-            if '<m:oMath' in xml_str:
-                # paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-                return True
-        return False
-
     def format_normal_text_in_document(doc, start_paragraph_index):
         skip = False  # 跳过标志初始化为False
         for paragraph in doc.paragraphs[start_paragraph_index:]:
@@ -183,6 +178,39 @@ def apply_default_template():
                                 # 设置行距为固定值20磅
                                 paragraph.paragraph_format.line_spacing = Pt(20)
 
+    # def set_font_according_to_language(run):
+    #     # 根据运行的文本设置字体，中文使用宋体，英文使用Times New Roman
+    #     if re.search('[\u4e00-\u9fff]', run.text):
+    #         run.font.name = '宋体'
+    #         run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+    #     else:
+    #         run.font.name = 'Times New Roman'
+    #         run._element.rPr.rFonts.set(qn('w:ascii'), 'Times New Roman')
+    #         run._element.rPr.rFonts.set(qn('w:hAnsi'), 'Times New Roman')
+    #
+    # def format_normal_text_in_document(doc, start_paragraph_index):
+    #     skip = False  # 跳过标志初始化为False
+    #     for paragraph in doc.paragraphs[start_paragraph_index:]:
+    #         if paragraph.style.name == 'Heading 1':
+    #             if "参考文献" in paragraph.text:
+    #                 skip = True  # 开始跳过
+    #             elif "致谢" in paragraph.text:
+    #                 skip = False  # 停止跳过
+    #                 continue  # 确保“致谢”之后的段落不被跳过
+    #
+    #         if skip:
+    #             continue  # 如果处于跳过状态，忽略当前段落的处理
+    #
+    #         if paragraph.style.name == 'Normal':
+    #             if paragraph.style.name == 'Normal' and "摘    要" not in paragraph.text and "ABSTRACT" not in paragraph.text:
+    #                 if paragraph.style.name == 'Normal' and "目    录" not in paragraph.text:
+    #                     if not has_graphics(paragraph):
+    #                         # print("Processing paragraph:", paragraph.text)
+    #                         for run in paragraph.runs:
+    #                             set_font_according_to_language(run)
+    #                             run.font.size = Pt(12)  # 设置字号为小四号字（12磅）
+    #                         paragraph.paragraph_format.line_spacing = Pt(20)  # 设置行距为固定值20磅
+
     def add_page_break(doc, text_to_format):
         for i, paragraph in enumerate(doc.paragraphs):
             if text_to_format in paragraph.text:
@@ -211,18 +239,6 @@ def apply_default_template():
                             # 设置加粗
                             run.font.bold = bold
 
-    def apply_style_settings(paragraph, font_name, font_size, alignment, line_spacing, space_before, space_after):
-        # 重新应用样式以重置所有属性
-        paragraph.style = paragraph.style
-        for run in paragraph.runs:
-            run.font.name = font_name
-            run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
-            run.font.size = Pt(font_size)
-        paragraph.alignment = alignment
-        paragraph.paragraph_format.line_spacing = line_spacing
-        paragraph.paragraph_format.space_before = Pt(space_before)
-        paragraph.paragraph_format.space_after = Pt(space_after)
-
     def set_page_break_before(paragraph):
         """为指定段落设置段前分页"""
         p = paragraph._p  # 访问底层的xml元素
@@ -242,6 +258,18 @@ def apply_default_template():
                             return True
             prev = prev.getprevious()
         return False
+
+    def apply_style_settings(paragraph, font_name, font_size, alignment, line_spacing, space_before, space_after):
+        # 重新应用样式以重置所有属性
+        paragraph.style = paragraph.style
+        for run in paragraph.runs:
+            run.font.name = font_name
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
+            run.font.size = Pt(font_size)
+        paragraph.alignment = alignment
+        paragraph.paragraph_format.line_spacing = line_spacing
+        paragraph.paragraph_format.space_before = Pt(space_before)
+        paragraph.paragraph_format.space_after = Pt(space_after)
 
     def format_headings_in_document(doc):
         for paragraph in doc.paragraphs:
@@ -346,8 +374,12 @@ def apply_default_template():
 
         for paragraph in doc.paragraphs:
             if re.match(figure_pattern, paragraph.text):
+                # 设置段落居中对齐
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 # 对中文和英文字符设置不同字体和字号
                 for run in paragraph.runs:
+                    # 取消加粗
+                    run.font.bold = False
                     if any(char in run.text for char in
                            'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890-'):
                         run.font.name = 'Times New Roman'
@@ -428,37 +460,37 @@ def apply_default_template():
             if in_abstract_to_toc or (in_main_content and not paragraph.style.name.startswith('Heading')):
                 paragraph.style = doc.styles['Normal']
 
-    def format_specific_keywords_and_text_after_them(doc):
-        keywords = ["题    目", "学院名称", "专    业", "班    级", "学    号", "学生姓名", "指导教师", "完成日期"]
-        abstract_found = False  # 标记是否找到了“摘要”
-
-        for paragraph in doc.paragraphs:
-            # 如果找到“摘要”，停止格式化
-            if "摘    要" in paragraph.text:
-                abstract_found = True
-                break
-
-            original_text = paragraph.text
-            for keyword in keywords:
-                if keyword in original_text:
-                    # 找到关键字，分割文本
-                    parts = original_text.split(keyword, 1)
-                    if len(parts) > 1:
-                        # 清除原段落内容
-                        paragraph.clear()
-                        # 重写并格式化关键字部分（宋体小三号，加粗）
-                        run = paragraph.add_run(parts[0] + keyword)
-                        run.font.name = '宋体'
-                        run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
-                        run.font.size = Pt(16)  # 设置字号为小三号（约16磅）
-                        run.font.bold = True
-
-                        # 重写并格式化关键字之后的部分（楷体小三号）
-                        run = paragraph.add_run(parts[1])
-                        run.font.name = 'KaiTi'  # 设置字体为楷体
-                        run._element.rPr.rFonts.set(qn('w:eastAsia'), 'KaiTi')
-                        run.font.size = Pt(15)  # 设置字号为小三号（约15磅）
-                        run.font.bold = False
+    # def format_specific_keywords_and_text_after_them(doc):
+    #     keywords = ["题    目", "学院名称", "专    业", "班    级", "学    号", "学生姓名", "指导教师", "完成日期"]
+    #     abstract_found = False  # 标记是否找到了“摘要”
+    #
+    #     for paragraph in doc.paragraphs:
+    #         # 如果找到“摘要”，停止格式化
+    #         if "摘    要" in paragraph.text:
+    #             abstract_found = True
+    #             break
+    #
+    #         original_text = paragraph.text
+    #         for keyword in keywords:
+    #             if keyword in original_text:
+    #                 # 找到关键字，分割文本
+    #                 parts = original_text.split(keyword, 1)
+    #                 if len(parts) > 1:
+    #                     # 清除原段落内容
+    #                     paragraph.clear()
+    #                     # 重写并格式化关键字部分（宋体小三号，加粗）
+    #                     run = paragraph.add_run(parts[0] + keyword)
+    #                     run.font.name = '宋体'
+    #                     run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+    #                     run.font.size = Pt(16)  # 设置字号为小三号（约16磅）
+    #                     run.font.bold = True
+    #
+    #                     # 重写并格式化关键字之后的部分（楷体小三号）
+    #                     run = paragraph.add_run(parts[1])
+    #                     run.font.name = 'KaiTi'  # 设置字体为楷体
+    #                     run._element.rPr.rFonts.set(qn('w:eastAsia'), 'KaiTi')
+    #                     run.font.size = Pt(15)  # 设置字号为小三号（约15磅）
+    #                     run.font.bold = False
 
     def operate_normal_symbol(doc):
         half_to_full_map = {
@@ -491,10 +523,15 @@ def apply_default_template():
 
     def set_continuous_heading_numbers(doc_path):
         heading_levels = {}  # 用于存储各级标题的当前计数
+        unnumbered_headings = ["参考文献", "致谢"]  # 不进行编号的特定标题列表
 
         for paragraph in doc.paragraphs:
             # 检查段落是否为标题
             if paragraph.style.name.startswith('Heading'):
+                # 跳过不编号的特定标题
+                if any(unnumbered_heading in paragraph.text for unnumbered_heading in unnumbered_headings):
+                    continue
+
                 level = int(paragraph.style.name.split(' ')[1])  # 获取标题级别
                 # 初始化或更新标题级别计数
                 if level in heading_levels:
@@ -582,20 +619,118 @@ def apply_default_template():
     #                 pPr.remove(numPr)
 
     # print("Processing paragraph:", paragraph.text)
+
+    def modify_table(doc_path):
+        table = doc.tables[0]
+
+        # 遍历表格中的行
+        for row in table.rows:
+            # 获取第二列的单元格
+            cell = row.cells[1]
+            # 遍历单元格中的所有段落，设置字体和大小
+            for paragraph in cell.paragraphs:
+                paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER  # 居中对齐
+                for run in paragraph.runs:
+                    run.font.name = '楷体'  # 设置字体为楷体
+                    run._element.rPr.rFonts.set(qn('w:eastAsia'), 'KaiTi')
+                    run.font.size = Pt(15)  # 设置字体大小为小三号大小
+
+    def remove_numbering(paragraph):
+        """Remove numbering from a paragraph."""
+        pPr = paragraph._p.get_or_add_pPr()
+        numPr = pPr.numPr
+        if numPr:
+            pPr.remove(numPr)
+
+    def add_numbering_between_headings(doc):
+        start_numbering = False
+        counter = 1  # 编号开始于1
+        heading_style = 'Heading 1'  # 一级标题的样式名
+        reference_heading_found = False
+        pattern = re.compile(r'^\[\d+\]\s*|\d+\.\s*|\(\d+\)\s*')  # 正则表达式识别编号
+
+        for paragraph in doc.paragraphs:
+            if '参考文献' in paragraph.text and paragraph.style.name == heading_style:
+                start_numbering = True
+                reference_heading_found = True
+                continue
+
+            if '致谢' in paragraph.text and paragraph.style.name == heading_style and reference_heading_found:
+                break
+
+            if start_numbering and reference_heading_found:
+                if paragraph.style.name != heading_style and paragraph.text.strip():
+                    original_text = pattern.sub('', paragraph.text.strip())
+                    remove_numbering(paragraph)  # 移除自动编号
+                    paragraph.clear()
+                    paragraph.add_run(f"[{counter}] {original_text}")
+                    counter += 1
+                # print(f"编号 {counter - 1}: {paragraph.text[:30]}")  # 显示编号后的段落前30个字符
+
+                # 设置行间距
+                paragraph.paragraph_format.line_spacing = Pt(20)
+                paragraph.paragraph_format.first_line_indent = -Inches(0.11 * 2)  # 每个字符大约0.1英寸
+
+    def add_footer_with_auto_numbering(doc_path):
+
+        word = win32.gencache.EnsureDispatch('Word.Application')
+        doc = word.Documents.Open(doc_path)
+        word.Visible = False  # 设置为 True 可以看到操作过程，便于调试
+        # 查找第一个“标题 1”并插入分节符
+        found = False
+        for paragraph in doc.Paragraphs:
+            if paragraph.Style.NameLocal == '标题 1':  # 根据你的Word版本调整样式名称
+                found = True
+                # 在“标题 1”起始处插入分节符
+                range = paragraph.Range
+                range.Collapse(Direction=1)  # Collapse the range to its start
+                range.InsertBreak(Type=win32.constants.wdSectionBreakNextPage)
+                break
+        if found:
+            # 获取最新创建的分节
+            section = doc.Sections.Last
+            # 设置新分节的页脚
+            footer = section.Footers(win32.constants.wdHeaderFooterPrimary)
+            footer.LinkToPrevious = False  # 不与前一节的页脚链接
+
+            # 重置页码开始为 1
+            footer.PageNumbers.RestartNumberingAtSection = True
+            footer.PageNumbers.StartingNumber = 1  # 正确设置页码从 1 开始
+
+            # 插入格式化的页码字段，并确保破折号正确插入
+            footer_text = footer.Range
+            footer_text.Text = " - "  # 首先插入前破折号
+            footer_text.Collapse(Direction=1)  # Collapse range to the end
+            footer_text.Fields.Add(footer_text, win32.constants.wdFieldEmpty, r'PAGE \* Arabic \* MERGEFORMAT', True)
+            footer_text.InsertAfter(" - ")  # 在页码后添加第二个破折号
+            footer.Range.ParagraphFormat.Alignment = win32.constants.wdAlignParagraphCenter
+            # 保存更改
+            doc.Save()
+        # 关闭文档和 Word 应用
+        doc.Close()
+        word.Quit()
+
     selected_doc_path = select_document()
     if selected_doc_path:
         doc = Document(selected_doc_path)
 
         messagebox.showinfo("Info", "处理文档需要一些时间，请耐心等待")
 
+        # 格式化表格
+        modify_table(doc)
+
         # 删除所有空白的一级标题
         remove_blank_heading_ones(doc)
         # remove_blank_paragraphs(doc)
 
+        # 格式化文献格式
+        operate_cited(doc)
+
         # 调整标题顺序
+        set_heading_one_for_specific_paragraphs(doc)
         set_continuous_heading_numbers(doc)
 
-        set_heading_one_for_specific_paragraphs(doc)
+        add_numbering_between_headings(doc)
 
         # 设置文档段落为Normal样式
         set_normal_style_between_sections(doc)
@@ -608,7 +743,7 @@ def apply_default_template():
         update_headers_if_text_exists(doc, header_text)
 
         # 格式化关键字和关键字之后的文字
-        format_specific_keywords_and_text_after_them(doc)
+        # format_specific_keywords_and_text_after_them(doc)
 
         # 需要修改的文本，字体和字号
         modifications = {
@@ -638,7 +773,7 @@ def apply_default_template():
         operate_normal_symbol(doc)
 
         # 格式化正文内容
-        format_normal_text_in_document(doc, 8)
+        format_normal_text_in_document(doc, 6)
 
         # 更新标题样式
         format_headings_in_document(doc)
@@ -654,9 +789,6 @@ def apply_default_template():
         align_paragraphs_left(doc)
         split_keywords(doc)
 
-        # 格式化文献格式
-        operate_cited(doc)
-
         # 为符合条件的一级标题添加段前分页
         add_page_break_before_headings(doc)
 
@@ -664,11 +796,12 @@ def apply_default_template():
         new_doc_path = select_save_as()
         if new_doc_path:
             doc.save(new_doc_path)
-            print(f"文件另存为 {new_doc_path}")
+            add_footer_with_auto_numbering(new_doc_path)
+            messagebox.showinfo("info", "文件已处理完毕")
         else:
-            print("取消保存文件")
+            messagebox.showinfo("info", "取消保存文件")
     else:
-        print("未选择文件或者取消")
+        messagebox.showinfo("info", "未选择文件或者取消")
 
 
 def apply_custom_template_1():
@@ -838,7 +971,7 @@ def apply_custom_template_2():
             set_page_layout_cus(doc, layout)
             save_path = select_save_as()
             doc.save(save_path)
-            messagebox.showinfo("操作完成")
+            messagebox.showinfo("info", "操作完成")
             root.destroy()
 
         tk.Button(root, text="确认", command=submit2).pack(pady=10)
@@ -853,17 +986,6 @@ def apply_custom_template_2():
 
 
 def apply_custom_template_3():
-    def has_graphics(paragraph):
-        """检查段落是否包含图形（如图片、图表、公式、流程图等）。"""
-        for run in paragraph.runs:
-            # 直接检查XML中的关键元素
-            xml_str = run._element.xml
-            if '<wp:inline' in xml_str or '<wp:anchor' in xml_str or \
-                    '<pic:pic' in xml_str or '<v:shape' in xml_str:
-                # paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-                return True
-        return False
-
     def get_font_settings(root, callback):
         # 获取系统中的字体列表
         system_fonts = families(root)
@@ -1036,18 +1158,6 @@ def apply_custom_template_4():
                 # 设置段落的行距为单倍行距
                 paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
 
-    def has_graphics(paragraph):
-        """检查段落是否包含图形（如图片、图表、公式、流程图等）。"""
-        for run in paragraph.runs:
-            # 直接检查XML中的关键元素
-            xml_str = run._element.xml
-            if '<wp:inline' in xml_str or '<wp:anchor' in xml_str or \
-                    '<pic:pic' in xml_str or '<m:oMath' in xml_str or \
-                    '<v:shape' in xml_str:
-                # paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-                return True
-        return False
-
     def modify_and_format_text_on_first_page(doc, modifications, formats):
         first_page_paragraphs = doc.paragraphs[:7]  # 假设第一页的内容在前10个段落中
         for paragraph in first_page_paragraphs:
@@ -1218,37 +1328,37 @@ def apply_custom_template_4():
 
             paragraph.text = modified_text
 
-    def format_specific_keywords_and_text_after_them(doc):
-        keywords = ["题    目", "学院名称", "专    业", "班    级", "学    号", "学生姓名", "指导教师", "完成日期"]
-        abstract_found = False  # 标记是否找到了“摘要”
-
-        for paragraph in doc.paragraphs:
-            # 如果找到“摘要”，停止格式化
-            if "摘    要" in paragraph.text:
-                abstract_found = True
-                break
-
-            original_text = paragraph.text
-            for keyword in keywords:
-                if keyword in original_text:
-                    # 找到关键字，分割文本
-                    parts = original_text.split(keyword, 1)
-                    if len(parts) > 1:
-                        # 清除原段落内容
-                        paragraph.clear()
-                        # 重写并格式化关键字部分（宋体小三号，加粗）
-                        run = paragraph.add_run(parts[0] + keyword)
-                        run.font.name = '宋体'
-                        run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
-                        run.font.size = Pt(16)  # 设置字号为小三号（约16磅）
-                        run.font.bold = True
-
-                        # 重写并格式化关键字之后的部分（楷体小三号）
-                        run = paragraph.add_run(parts[1])
-                        run.font.name = 'KaiTi'  # 设置字体为楷体
-                        run._element.rPr.rFonts.set(qn('w:eastAsia'), 'KaiTi')
-                        run.font.size = Pt(15)  # 设置字号为小三号（约15磅）
-                        run.font.bold = False
+    # def format_specific_keywords_and_text_after_them(doc):
+    #     keywords = ["题    目", "学院名称", "专    业", "班    级", "学    号", "学生姓名", "指导教师", "完成日期"]
+    #     abstract_found = False  # 标记是否找到了“摘要”
+    #
+    #     for paragraph in doc.paragraphs:
+    #         # 如果找到“摘要”，停止格式化
+    #         if "摘    要" in paragraph.text:
+    #             abstract_found = True
+    #             break
+    #
+    #         original_text = paragraph.text
+    #         for keyword in keywords:
+    #             if keyword in original_text:
+    #                 # 找到关键字，分割文本
+    #                 parts = original_text.split(keyword, 1)
+    #                 if len(parts) > 1:
+    #                     # 清除原段落内容
+    #                     paragraph.clear()
+    #                     # 重写并格式化关键字部分（宋体小三号，加粗）
+    #                     run = paragraph.add_run(parts[0] + keyword)
+    #                     run.font.name = '宋体'
+    #                     run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+    #                     run.font.size = Pt(16)  # 设置字号为小三号（约16磅）
+    #                     run.font.bold = True
+    #
+    #                     # 重写并格式化关键字之后的部分（楷体小三号）
+    #                     run = paragraph.add_run(parts[1])
+    #                     run.font.name = 'KaiTi'  # 设置字体为楷体
+    #                     run._element.rPr.rFonts.set(qn('w:eastAsia'), 'KaiTi')
+    #                     run.font.size = Pt(15)  # 设置字号为小三号（约15磅）
+    #                     run.font.bold = False
 
     def operate_normal_symbol(doc):
         half_to_full_map = {
@@ -1295,7 +1405,7 @@ def apply_custom_template_4():
         update_headers_if_text_exists(doc, header_text)
 
         # 格式化关键字和关键字之后的文字
-        format_specific_keywords_and_text_after_them(doc)
+        # format_specific_keywords_and_text_after_them(doc)
 
         # 需要修改的文本，字体和字号
         modifications = {
