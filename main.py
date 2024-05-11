@@ -178,6 +178,18 @@ def apply_default_template():
                                 # 设置行距为固定值20磅
                                 paragraph.paragraph_format.line_spacing = Pt(20)
 
+                                # # 获取或创建段落属性 (pPr)
+                                # pPr = paragraph._p.get_or_add_pPr()
+                                # # 创建或获取现有的 spacing 元素
+                                # spacing = pPr.find(qn('w:spacing'))
+                                # if spacing is None:
+                                #     spacing = OxmlElement('w:spacing')
+                                #     pPr.append(spacing)
+                                # # 设置段前距为0磅
+                                # spacing.set(qn('w:before'), "0")
+                                # # 设置段后距为0磅
+                                # spacing.set(qn('w:after'), "0")
+
     # def set_font_according_to_language(run):
     #     # 根据运行的文本设置字体，中文使用宋体，英文使用Times New Roman
     #     if re.search('[\u4e00-\u9fff]', run.text):
@@ -459,6 +471,19 @@ def apply_default_template():
             # 如果在“摘要”到“目录”之间，或者在主要内容部分
             if in_abstract_to_toc or (in_main_content and not paragraph.style.name.startswith('Heading')):
                 paragraph.style = doc.styles['Normal']
+                # for paragraph in doc.paragraphs:
+                #     if paragraph.style.name == '正文':
+                #         # 获取段落属性
+                #         pPr = paragraph._p.get_or_add_pPr()
+                #         # 设置段前距
+                #         spacing_before = OxmlElement('w:spacing')
+                #         spacing_before.set(qn('w:before'), "0")
+                #         # 设置段后距
+                #         spacing_after = OxmlElement('w:spacing')
+                #         spacing_after.set(qn('w:after'), "0")
+                #         # 将设置添加到段落属性中
+                #         pPr.append(spacing_before)
+                #         pPr.append(spacing_after)
 
     # def format_specific_keywords_and_text_after_them(doc):
     #     keywords = ["题    目", "学院名称", "专    业", "班    级", "学    号", "学生姓名", "指导教师", "完成日期"]
@@ -492,6 +517,35 @@ def apply_default_template():
     #                     run.font.size = Pt(15)  # 设置字号为小三号（约15磅）
     #                     run.font.bold = False
 
+    # def operate_normal_symbol(doc):
+    #     half_to_full_map = {
+    #         ',': '，',
+    #         '?': '？',
+    #         '!': '！',
+    #         ':': '：',
+    #         ';': '；',
+    #         '(': '（',
+    #         ')': '）',
+    #         '{': '｛',
+    #         '}': '｝'
+    #     }
+    #
+    #     start_processing = False  # 使用一个标志来控制处理的开始
+    #     for paragraph in doc.paragraphs:
+    #         if paragraph.style.name == 'Heading 1' and '1  引言' in paragraph.text:
+    #             start_processing = True  # 开始处理文档
+    #         if not paragraph.style.name == 'Heading':
+    #             if start_processing and paragraph.style.name == 'Normal':
+    #                 if not has_graphics(paragraph):
+    #                     for run in paragraph.runs:
+    #                         new_text = ''
+    #                         for char in run.text:
+    #                             if char in half_to_full_map:
+    #                                 new_text += half_to_full_map[char]
+    #                             else:
+    #                                 new_text += char
+    #                         run.text = new_text
+
     def operate_normal_symbol(doc):
         half_to_full_map = {
             ',': '，',
@@ -505,21 +559,32 @@ def apply_default_template():
             '}': '｝'
         }
 
+        punctuation_marks = set("。？！，、；：「」『』（）《》【】〈〉“”‘’…—")
+
         start_processing = False  # 使用一个标志来控制处理的开始
         for paragraph in doc.paragraphs:
             if paragraph.style.name == 'Heading 1' and '1  引言' in paragraph.text:
                 start_processing = True  # 开始处理文档
-            if not paragraph.style.name == 'Heading':
-                if start_processing and paragraph.style.name == 'Normal':
-                    if not has_graphics(paragraph):
-                        for run in paragraph.runs:
-                            new_text = ''
-                            for char in run.text:
-                                if char in half_to_full_map:
-                                    new_text += half_to_full_map[char]
-                                else:
-                                    new_text += char
-                            run.text = new_text
+
+            if start_processing and paragraph.style.name == 'Normal':
+                if not has_graphics(paragraph):  # 确保不处理包含图形的段落
+                    for run in paragraph.runs:
+                        # 转换半角到全角符号
+                        new_text = ''.join([half_to_full_map.get(char, char) for char in run.text])
+                        run.text = new_text
+
+                    # 删除连续的标点符号中的第一个
+                    original_text = paragraph.text
+                    new_text = []
+                    chars = list(original_text)  # 转换为字符列表以处理连续标点
+                    i = 0
+                    while i < len(chars):
+                        if i + 1 < len(chars) and chars[i] in punctuation_marks and chars[i + 1] in punctuation_marks:
+                            i += 1  # 跳过第一个标点，保留第二个
+                        new_text.append(chars[i])
+                        i += 1
+
+                    paragraph.text = ''.join(new_text)  # 更新段落文本
 
     def set_continuous_heading_numbers(doc_path):
         heading_levels = {}  # 用于存储各级标题的当前计数
@@ -797,11 +862,11 @@ def apply_default_template():
         if new_doc_path:
             doc.save(new_doc_path)
             add_footer_with_auto_numbering(new_doc_path)
-            messagebox.showinfo("info", "文件已处理完毕")
+            messagebox.showinfo("Info", "文件已处理完毕")
         else:
-            messagebox.showinfo("info", "取消保存文件")
+            messagebox.showinfo("Info", "取消保存文件")
     else:
-        messagebox.showinfo("info", "未选择文件或者取消")
+        messagebox.showinfo("Info", "未选择文件或者取消")
 
 
 def apply_custom_template_1():
@@ -841,7 +906,8 @@ def apply_custom_template_1():
 
         # 创建一个新窗口来选择字体
         font_selector = tk.Toplevel(root)
-        font_selector.title("选择字体")
+        font_selector.title("自定义标题样式")
+        font_selector.geometry("300x250")
 
         def create_font_widgets(level, font_list):
             tk.Label(font_selector, text=f"请输入{level}标题的字体名称和字号:").pack()
@@ -850,7 +916,7 @@ def apply_custom_template_1():
             font_menu = tk.OptionMenu(font_selector, font_var, *font_list)
             font_menu.pack()
 
-            font_size = simpledialog.askinteger("Input", f"请输入{level}标题的字号 (pt):", parent=font_selector)
+            font_size = simpledialog.askinteger("输入字号", f"请输入{level}标题的字号 (pt):", parent=font_selector)
 
             return font_var, font_size
 
@@ -913,7 +979,7 @@ def apply_custom_template_1():
     def ttd():
         doc_path = select_document()
         if not doc_path:
-            messagebox.showinfo("未选择文档，操作取消。")
+            messagebox.showinfo("Info", "未选择文档，操作取消。")
             return
 
         # 获取输入
@@ -925,9 +991,9 @@ def apply_custom_template_1():
         save_path = select_save_as()
         if save_path:
             doc.save(save_path)
-            messagebox.showinfo("完成", "文档已保存到: " + save_path)
+            messagebox.showinfo("Info", "文档已保存到: " + save_path)
         else:
-            messagebox.showinfo("未选择保存位置，操作取消。")
+            messagebox.showinfo("Info", "未选择保存位置，操作取消。")
 
     ttd()
     root.mainloop()
@@ -971,7 +1037,7 @@ def apply_custom_template_2():
             set_page_layout_cus(doc, layout)
             save_path = select_save_as()
             doc.save(save_path)
-            messagebox.showinfo("info", "操作完成")
+            messagebox.showinfo("Info", "操作完成")
             root.destroy()
 
         tk.Button(root, text="确认", command=submit2).pack(pady=10)
@@ -982,7 +1048,7 @@ def apply_custom_template_2():
         doc = Document(doc_path)
         get_layout_input(doc)
     else:
-        messagebox.showinfo("未选择文档，操作取消。")
+        messagebox.showinfo("Info", "未选择文档，操作取消。")
 
 
 def apply_custom_template_3():
@@ -993,6 +1059,7 @@ def apply_custom_template_3():
         # 设置选择字体的对话框
         font_choice = tk.Toplevel(root)
         font_choice.title("设置字体和字号")
+        font_choice.geometry("250x180")
 
         # 中文字体选择
         chinese_font_var = StringVar(font_choice)
@@ -1392,7 +1459,7 @@ def apply_custom_template_4():
     selected_doc_path = select_document()
     if selected_doc_path:
         doc = Document(selected_doc_path)
-        messagebox.showinfo('info', "处理文档需要一些时间，请耐心等待")
+        messagebox.showinfo('Info', "处理文档需要一些时间，请耐心等待")
 
         # 删除所有空白的一级标题
         remove_blank_heading_ones(doc)
@@ -1453,11 +1520,11 @@ def apply_custom_template_4():
         new_doc_path = select_save_as()
         if new_doc_path:
             doc.save(new_doc_path)
-            messagebox.showinfo("完成", "文档已保存到: " + new_doc_path)
+            messagebox.showinfo("Info", "文档已保存到: " + new_doc_path)
         else:
-            messagebox.showinfo("取消保存文件")
+            messagebox.showinfo("Info","取消保存文件")
     else:
-        messagebox.showinfo("未选择文件或者取消")
+        messagebox.showinfo("Info","未选择文件或者取消")
 
 
 def open_custom_template_window(root):
