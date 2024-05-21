@@ -1803,6 +1803,47 @@ def apply_custom_template_4():
                 paragraph.paragraph_format.first_line_indent = -Cm(0.74)  # 每个字符大约0.1英寸
                 paragraph.paragraph_format.left_indent = Cm(0.74)
 
+    def update_paragraphs(doc):
+        # 定义用于匹配 "图X-X *" 的正则表达式
+        pattern = re.compile(r'^图(\d+)-(\d+)(.*)')
+
+        # 用于记录每个第一个X的最新第二个X值
+        figure_count = {}
+
+        # 遍历所有段落
+        for para in doc.paragraphs:
+            new_text = para.text
+            # 查找所有匹配的文本
+            matches = pattern.findall(new_text)
+
+            if matches:
+                # 初始化临时文本
+                temp_text = new_text
+                for match in matches:
+                    first_x_value = int(match[0])
+                    second_x_value = int(match[1])
+                    rest_of_text = match[2]
+
+                    # 如果是新的第一个X，初始化计数为1
+                    if first_x_value not in figure_count:
+                        figure_count[first_x_value] = 1
+
+                    # 获取应当替换的第二个X值
+                    expected_x_value = figure_count[first_x_value]
+
+                    # 构建旧的和新的字符串
+                    old_str = f'图{first_x_value}-{second_x_value}{rest_of_text}'
+                    new_str = f'图{first_x_value}-{expected_x_value}{rest_of_text}'
+
+                    # 只替换第一个匹配的字符串
+                    temp_text = temp_text.replace(old_str, new_str, 1)
+
+                    # 更新计数
+                    figure_count[first_x_value] += 1
+
+                # 更新段落文本
+                para.text = temp_text
+
     def format_normal_text_in_abstract(doc, start_paragraph_index):
         skip = False
         for paragraph in doc.paragraphs[start_paragraph_index:]:
@@ -1858,6 +1899,7 @@ def apply_custom_template_4():
         set_continuous_heading_numbers(selected_doc_path)
         # add_numbering_between_headings(selected_doc_path)
         add_numbering_between_headings(doc)
+        update_paragraphs(doc)
 
         # 设置文档段落为Normal样式
         set_normal_style_between_sections(doc)
