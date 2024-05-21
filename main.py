@@ -81,6 +81,10 @@ def has_graphics(paragraph):
     return False
 
 
+key1 = r'^摘\s*要$'
+key2 = r'^目\s*录$'
+
+
 # 默认模板
 def apply_default_template():
     def set_page_layout(doc):
@@ -172,8 +176,8 @@ def apply_default_template():
                 continue  # 如果处于跳过状态，忽略当前段落的处理
 
             if paragraph.style.name == 'Normal':
-                if paragraph.style.name == 'Normal' and "摘    要" not in paragraph.text and "ABSTRACT" not in paragraph.text:
-                    if paragraph.style.name == 'Normal' and "目    录" not in paragraph.text:
+                if "摘    要" not in paragraph.text and "ABSTRACT" not in paragraph.text:
+                    if "目    录" not in paragraph.text:
                         if not has_graphics(paragraph):
                             # print("Processing paragraph:", paragraph.text)
                             for run in paragraph.runs:
@@ -573,9 +577,13 @@ def apply_default_template():
         brackets = {'（', '）', '(', ')'}  # 定义括号集合，可根据需要添加全角和半角的其它括号类型
 
         start_processing = False  # 使用一个标志来控制处理的开始
+
+        pattern = r'.*引言$'
+
         for paragraph in doc.paragraphs:
-            if paragraph.style.name == 'Heading 1' and '1  引言' in paragraph.text:
-                start_processing = True  # 开始处理文档
+            if paragraph.style.name == 'Heading 1':
+                if re.fullmatch(pattern, paragraph.text.strip()):
+                    start_processing = True  # 开始处理文档
 
             if start_processing and paragraph.style.name == 'Normal':
                 if not has_graphics(paragraph):  # 确保不处理包含图形的段落
@@ -1189,13 +1197,17 @@ def apply_custom_template_3():
             if skip:
                 continue  # 如果处于跳过状态，忽略当前段落的处理
 
+        pattern = r'.*引言$'
+
         for paragraph in doc.paragraphs:
-            if "1  引言" in paragraph.text and paragraph.style.name == 'Heading 1':
-                start_formatting = True
+            if paragraph.style.name == 'Heading 1':
+                if re.fullmatch(pattern, paragraph.text.strip()):
+                    start_formatting = True  # 开始处理文档
+
             if start_formatting:
                 if paragraph.style.name == 'Normal':
-                    if paragraph.style.name == 'Normal' and "摘    要" not in paragraph.text and "ABSTRACT" not in paragraph.text:
-                        if paragraph.style.name == 'Normal' and "目    录" not in paragraph.text:
+                    if "摘    要" not in paragraph.text and "ABSTRACT" not in paragraph.text:
+                        if "目    录" not in paragraph.text:
                             if not has_graphics(paragraph):
                                 for run in paragraph.runs:
                                     run.font.name = chinese_font
@@ -1543,9 +1555,13 @@ def apply_custom_template_4():
         brackets = {'（', '）', '(', ')'}  # 定义括号集合，可根据需要添加全角和半角的其它括号类型
 
         start_processing = False  # 使用一个标志来控制处理的开始
+
+        pattern = r'.*引言$'
+
         for paragraph in doc.paragraphs:
-            if paragraph.style.name == 'Heading 1' and '1  引言' in paragraph.text:
-                start_processing = True  # 开始处理文档
+            if paragraph.style.name == 'Heading 1':
+                if re.fullmatch(pattern, paragraph.text.strip()):
+                    start_processing = True  # 开始处理文档
 
             if start_processing and paragraph.style.name == 'Normal':
                 if not has_graphics(paragraph):  # 确保不处理包含图形的段落
@@ -1559,11 +1575,6 @@ def apply_custom_template_4():
                     new_text = []
                     chars = list(original_text)  # 转换为字符列表以处理连续标点
                     i = 0
-                    # while i < len(chars):
-                    #     if i + 1 < len(chars) and chars[i] in punctuation_marks and chars[i + 1] in punctuation_marks:
-                    #         i += 1  # 跳过第一个标点，保留第二个
-                    #     new_text.append(chars[i])
-                    #     i += 1
 
                     while i < len(chars) - 1:  # 减1避免索引越界
                         # 检查当前和下一个字符是否都在标点集合中，且不含括号
