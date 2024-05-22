@@ -2001,6 +2001,26 @@ def apply_custom_template_4():
                                     if paragraph.paragraph_format.first_line_indent > Cm(0):
                                         paragraph.paragraph_format.first_line_indent = Cm(0.85)
                                         paragraph.paragraph_format.left_indent = Cm(0)
+    def set_paragraph_format(paragraph):
+        for run in paragraph.runs:
+            if any('\u4e00' <= char <= '\u9fff' for char in run.text):  # 判断是否为中文
+                run.font.name = '宋体'
+                run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+            else:
+                run.font.name = 'Times New Roman'
+            run.font.size = Pt(12)  # 设置小四号字
+
+        # 设置行间距
+        paragraph_format = paragraph.paragraph_format
+        paragraph_format.line_spacing = Pt(20)
+
+    def extract_and_format_toc_paragraphs(doc):
+        toc_content = []
+        for paragraph in doc.paragraphs:
+            if paragraph.style.name.startswith('toc'):
+                toc_content.append(paragraph.text)
+                set_paragraph_format(paragraph)
+
 
     # print("Processing paragraph:", paragraph.text)
     selected_doc_path = select_document()
@@ -2071,6 +2091,8 @@ def apply_custom_template_4():
 
         # 为符合条件的一级标题添加段前分页
         add_page_break_before_headings(doc)
+
+        extract_and_format_toc_paragraphs(doc)
 
         renum(doc)
 
