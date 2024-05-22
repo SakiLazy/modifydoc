@@ -225,7 +225,7 @@ def apply_default_template():
     #             continue  # 如果处于跳过状态，忽略当前段落的处理
     #
     #         if paragraph.style.name == 'Normal':
-    #             if paragraph.style.name == 'Normal' and "摘    要" not in paragraph.text and "ABSTRACT" not in paragraph.text:
+    #             if "摘    要" not in paragraph.text and "ABSTRACT" not in paragraph.text:
     #                 if paragraph.style.name == 'Normal' and "目    录" not in paragraph.text:
     #                     if not has_graphics(paragraph):
     #                         # print("Processing paragraph:", paragraph.text)
@@ -729,7 +729,6 @@ def apply_default_template():
                     run.font.size = Pt(15)  # 设置字体大小为小三号大小
 
     def remove_numbering(paragraph):
-        """Remove numbering from a paragraph."""
         pPr = paragraph._p.get_or_add_pPr()
         numPr = pPr.numPr
         if numPr:
@@ -794,7 +793,7 @@ def apply_default_template():
             # 插入格式化的页码字段，并确保破折号正确插入
             footer_text = footer.Range
             footer_text.Text = " - "  # 首先插入前破折号
-            footer_text.Collapse(Direction=1)  # Collapse range to the end
+            footer_text.Collapse(Direction=1)
             footer_text.Fields.Add(footer_text, win32.constants.wdFieldEmpty, r'PAGE \* Arabic \* MERGEFORMAT', True)
             footer_text.InsertAfter(" - ")  # 在页码后添加第二个破折号
             footer.Range.ParagraphFormat.Alignment = win32.constants.wdAlignParagraphCenter
@@ -911,6 +910,26 @@ def apply_default_template():
                 # 更新段落文本
                 para.text = temp_text
 
+    def set_paragraph_format(paragraph):
+        for run in paragraph.runs:
+            if any('\u4e00' <= char <= '\u9fff' for char in run.text):  # 判断是否为中文
+                run.font.name = '宋体'
+                run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+            else:
+                run.font.name = 'Times New Roman'
+            run.font.size = Pt(12)  # 设置小四号字
+
+        # 设置行间距
+        paragraph_format = paragraph.paragraph_format
+        paragraph_format.line_spacing = Pt(20)
+
+    def extract_and_format_toc_paragraphs(doc):
+        toc_content = []
+        for paragraph in doc.paragraphs:
+            if paragraph.style.name.startswith('toc'):
+                toc_content.append(paragraph.text)
+                set_paragraph_format(paragraph)
+
     selected_doc_path = select_document()
     if selected_doc_path:
         doc = Document(selected_doc_path)
@@ -996,6 +1015,8 @@ def apply_default_template():
         add_page_break_before_headings(doc)
 
         renum(doc)
+
+        extract_and_format_toc_paragraphs(doc)
 
         # 另存为文件
         new_doc_path = select_save_as()
@@ -1270,6 +1291,104 @@ def apply_custom_template_3():
 
         font_choice.destroy()  # 关闭字体选择窗口
 
+    def operate_cited(doc):
+        start_index, end_index = None, None
+        # 一次遍历确定起始和结束索引
+        for i, paragraph in enumerate(doc.paragraphs):
+            text = paragraph.text.strip()
+            if text == "参考文献" and paragraph.style.name == 'Heading 1':
+                start_index = i + 1  # 从"参考文献"之后的段落开始处理
+            elif text == "致谢" and paragraph.style.name == 'Heading 1':
+                end_index = i  # 处理直到"致谢"之前的段落
+                break  # 一旦找到两个索引，即停止循环
+
+        for paragraph in doc.paragraphs[start_index:end_index]:
+            match = re.search(r'(\D+)(\d{1,2})(\D+)', paragraph.text)
+            if match:
+                before, number, after = match.groups()
+                new_text = before.replace(before[-1], '[') + number + after.replace(after[0], ']')
+                paragraph.text = re.sub(r'(\D+)(\d{1,2})(\D+)', new_text, paragraph.text, count=1)
+            for run in paragraph.runs:
+                if run.text.strip() != '':
+                    if any(ord(c) > 128 for c in run.text):  # 判断是否包含中文字符
+                        run.font.name = '宋体'
+                    else:
+                        run.font.name = 'Times New Roman'
+                    run.font.size = Pt(10)
+
+            paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+
+            paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+            paragraph.paragraph_format.line_spacing = Pt(20)
+
+            indent_xml = """
+                           <w:ind xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:left="0" w:hanging="280"/>
+                       """
+            indent_element = parse_xml(indent_xml)
+            paragraph._p.insert(2, indent_element)
+
+            modified_text = paragraph.text.replace('，', ',')
+            modified_text = modified_text.replace('。', '.')
+            modified_text = modified_text.replace('；', ';')
+            modified_text = modified_text.replace('：', ':')
+            modified_text = modified_text.replace('【', '[')
+            modified_text = modified_text.replace('】', ']')
+            modified_text = modified_text.replace('（', '(')
+            modified_text = modified_text.replace('）', ')')
+            modified_text = modified_text.replace('. ', '.')
+
+            paragraph.text = modified_text
+
+    def operate_normal_symbol(doc):
+
+        half_to_full_map = {
+            ',': '，',
+            '?': '？',
+            '!': '！',
+            ':': '：',
+            ';': '；',
+            '(': '（',
+            ')': '）',
+            '{': '｛',
+            '}': '｝'
+        }
+
+        punctuation_marks = set("。？！，、；：「」『』（）《》【】〈〉“”‘’…—")
+        brackets = {'（', '）', '(', ')'}
+
+        start_processing = False  # 使用一个标志来控制处理的开始
+
+        pattern = r'.*引言$'
+
+        for paragraph in doc.paragraphs:
+            if paragraph.style.name == 'Heading 1':
+                if re.fullmatch(pattern, paragraph.text.strip()):
+                    start_processing = True  # 开始处理文档
+
+            if start_processing and paragraph.style.name == 'Normal':
+                if not has_graphics(paragraph):  # 确保不处理包含图形的段落
+                    for run in paragraph.runs:
+                        # 转换半角到全角符号
+                        new_text = ''.join([half_to_full_map.get(char, char) for char in run.text])
+                        run.text = new_text
+
+                    # 删除连续的标点符号中的第一个
+                    original_text = paragraph.text
+                    new_text = []
+                    chars = list(original_text)  # 转换为字符列表以处理连续标点
+                    i = 0
+
+                    while i < len(chars) - 1:  # 减1避免索引越界
+                        # 检查当前和下一个字符是否都在标点集合中，且不含括号
+                        if chars[i] in punctuation_marks and chars[i + 1] in punctuation_marks and \
+                                (chars[i] not in brackets and chars[i + 1] not in brackets):
+                            # 删除当前的重复标点符号，保留下一个（通过不增加i来间接实现）
+                            del chars[i]
+                        else:
+                            i += 1  # 移动到下一个字符
+
+                    paragraph.text = ''.join(chars)  # 更新段落文本
+
     def save_document(doc):
         save_path = filedialog.asksaveasfilename(title="保存文档", defaultextension=".docx",
                                                  filetypes=[("Word Documents", "*.docx")])
@@ -1284,8 +1403,10 @@ def apply_custom_template_3():
         doc = Document(doc_path)
         root = tk.Tk()
         root.withdraw()
+        operate_normal_symbol(doc)
         get_font_settings(root, lambda cf, cfs, ef, efs, fc: [format_normal_text_in_document(doc, cf, cfs, ef, efs, fc),
                                                               save_document(doc)])
+        operate_cited(doc)
     else:
         messagebox.showerror("错误", "未选择文档，操作取消。")
 
@@ -1378,7 +1499,7 @@ def apply_custom_template_4():
                 paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
 
     def modify_and_format_text_on_first_page(doc, modifications, formats):
-        first_page_paragraphs = doc.paragraphs[:7]  # 假设第一页的内容在前10个段落中
+        first_page_paragraphs = doc.paragraphs[:7]  # 假设第一页的内容在前7个段落中
         for paragraph in first_page_paragraphs:
             # print("Processing paragraph:", paragraph.text)
             for old_text, new_text in modifications.items():
@@ -1582,6 +1703,7 @@ def apply_custom_template_4():
     #                     run.font.bold = False
 
     def operate_normal_symbol(doc):
+
         half_to_full_map = {
             ',': '，',
             '?': '？',
@@ -1595,7 +1717,7 @@ def apply_custom_template_4():
         }
 
         punctuation_marks = set("。？！，、；：「」『』（）《》【】〈〉“”‘’…—")
-        brackets = {'（', '）', '(', ')'}  # 定义括号集合，可根据需要添加全角和半角的其它括号类型
+        brackets = {'（', '）', '(', ')'}
 
         start_processing = False  # 使用一个标志来控制处理的开始
 
@@ -1910,6 +2032,7 @@ def apply_custom_template_4():
         update_headers_if_text_exists(doc, header_text)
 
         format_normal_text_in_abstract(doc, 5)
+
         # 需要修改的文本，字体和字号
         modifications = {
             "杭州电子科技大学信息工程学院": "杭州电子科技大学信息工程学院",
@@ -1935,7 +2058,7 @@ def apply_custom_template_4():
         format_abstract(doc, text_to_format3)
 
         # 操作标点
-        operate_normal_symbol(doc)
+        # operate_normal_symbol(doc)
 
         # 修改图注
         modify_figure_paragraphs(doc)
@@ -1955,7 +2078,7 @@ def apply_custom_template_4():
         new_doc_path = select_save_as()
         if new_doc_path:
             doc.save(new_doc_path)
-            add_footer_with_auto_numbering(new_doc_path)
+            # add_footer_with_auto_numbering(new_doc_path)
             messagebox.showinfo("Info", "文件已处理完毕")
         else:
             messagebox.showinfo("Info", "取消保存文件")
